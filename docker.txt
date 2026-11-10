@@ -1,0 +1,1 @@
+docker run -d -p 8080:8081 -e DB_HOST=host.docker.internal --env-file .env --restart unless-stopped --name backend_app backend:latest                                       

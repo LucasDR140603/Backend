@@ -18,6 +18,7 @@ import nodemailer from 'nodemailer'
 import { initSocket } from './socket.js'
 import {rateLimit} from 'express-rate-limit'
 import url from 'url'
+import cookieParser from 'cookie-parser'
 const app=express()
 const port=process.env.port || 8081
 const email_config={
@@ -29,8 +30,15 @@ const email_config={
         pass:process.env.EMAIL_PASS.replaceAll(`'`,'')
     }
 }
+app.use(cookieParser())
+const cookieOptions={
+    httpOnly:true,
+    secure:process.env.NODE_ENV!=='development',
+    sameSite:'lax'
+}
 app.use(cors({
-    origin:'*',
+    origin:['https://www.asinova.es','http://localhost:3000','http://localhost:4000'],
+    credentials:true,
     methods:['GET','POST','PUT','DELETE'],
     allowedHeaders:['Content-Type','X-register-key','Authorization'],
 }))
@@ -99,14 +107,26 @@ app.post(`${api}register`,strictLimiter,async(req,res)=>{
         ]
     )
     x.perfil=null
-    res.json(jwtear(x))
+    const resultado=jwtear(x)
+    const navegador=!!req.headers.origin
+    if (navegador){
+        res.cookie('token',resultado.token,{...cookieOptions,maxAge:1000*60*15})
+        res.cookie('refreshToken',resultado.refreshToken,{...cookieOptions,maxAge:1000*60*60*24*7})
+    }
+    res.json(navegador?resultado.usuario:resultado)
 })
 app.post(`${api}login`,strictLimiter,async(req,res)=>{
     const user=req.body
     let result=await pool.query(`select * from usuarios where (LOWER(nick)=$1 or LOWER(email)=$1) and operativo=true;`,[user.user.toLowerCase()])
     if (result.rows.length>0 && await bcrypt.compare(user.clave,result.rows[0].clave)){
         let usuario=result.rows[0]
-        res.json(jwtear(usuario))
+        const resultado=jwtear(usuario)
+        const navegador=!!req.headers.origin
+        if (navegador){
+            res.cookie('token',resultado.token,{...cookieOptions,maxAge:1000*60*15})
+            res.cookie('refreshToken',resultado.refreshToken,{...cookieOptions,maxAge:1000*60*60*24*7})
+        }
+        res.json(navegador?resultado.usuario:resultado)
     }
     else{
         res.sendStatus(403)
@@ -124,7 +144,7 @@ app.post(`${api}usuario`,authenticate,async(req,res)=>{
     }
 })
 app.post(`${api}refresh`,async(req,res)=>{
-    const {refreshToken}=req.body
+    const refreshToken=req.cookies?.refreshToken || req.body.refreshToken
     if (!refreshToken) return res.sendStatus(401)
     jwt.verify(refreshToken,process.env.JWT_SECRET_REFRESH,async(err,user)=>{
         if (err) return res.sendStatus(403)
@@ -137,7 +157,14 @@ app.post(`${api}refresh`,async(req,res)=>{
                 id:user.id,
             }
             const newToken=jwt.sign(payload,process.env.JWT_SECRET,{expiresIn:'15m'})
-            res.json({token:newToken})
+            const navegador=!!req.headers.origin
+            if (navegador){
+                res.cookie('token',newToken,{...cookieOptions,maxAge:1000*60*15})
+                res.sendStatus(204)
+            }
+            else{
+                res.json({token:newToken})
+            }
         }
     })
 })
@@ -165,13 +192,16 @@ app.post(`${api}gmail`,strictLimiter,async(req,res)=>{
     const transporter=nodemailer.createTransport(email_config)
     const mailOptions={
         from:email_config.auth.user,
-        to:req.body.para,
+        to:'jorge.guinarte@asinova.es',
         subject:req.body.asunto,
         text:req.body.mensaje
     }
     await transporter.sendMail(mailOptions)
     res.json({mensaje:'Correo enviado correctamente'})
 })
+function hmac(str){
+    return crypto.createHmac('sha256',process.env.JWT_SECRET).update(str).digest('hex')
+}
 app.post(`${api}recuperar`,strictLimiter,async(req,res)=>{
     const transporter=nodemailer.createTransport(email_config)
     const user=req.body.user
@@ -187,7 +217,7 @@ app.post(`${api}recuperar`,strictLimiter,async(req,res)=>{
         await transporter.sendMail(mailOptions)
         const payload={
             email:result.rows[0].email,
-            codigo:cod
+            codigo:hmac(cod)
         }
         const codigo=jwt.sign(payload,process.env.JWT_SECRET,{expiresIn:'15m'})
         res.json({token:codigo,email:result.rows[0].email})
@@ -197,26 +227,12 @@ app.post(`${api}recuperar`,strictLimiter,async(req,res)=>{
     }
 })
 app.post(`${api}comprobar`,strictLimiter,authenticate_email,async(req,res)=>{
-    // const response=await axios.post(
-    //     'https://challenges.cloudflare.com/turnstile/v0/siteverify',
-    //     new URLSearchParams({
-    //         secret:process.env.TURNSTILE_SECRET,
-    //         response:req.body.captchaToken
-    //     }),
-    //     {
-    //         headers:{
-    //             'Content-Type':'application/x-www-form-urlencoded'
-    //         }
-    //     }
-    // )
-    // if (!response.data.success){
-    //     return res.status(400).json({error:'Captcha inválido'})
-    // }
-    if (req.user && (req.user.codigo==req.body.codigo)){
+    if (req.user && req.user?.codigo && crypto.timingSafeEqual(Buffer.from(hmac(req.body.codigo)),Buffer.from(req.user.codigo))){
         const payload={
-            email:req.user.email
+            email:req.user.email,
+            comprobado:true
         }
-        const token=jwt.sign(payload,process.env.JWT_SECRET)
+        const token=jwt.sign(payload,process.env.JWT_SECRET,{expiresIn:'15m'})
         res.json({token:token})
     }
     else{
@@ -224,7 +240,7 @@ app.post(`${api}comprobar`,strictLimiter,authenticate_email,async(req,res)=>{
     }
 })
 app.post(`${api}cambiarclave`,strictLimiter,authenticate_email,async(req,res)=>{
-    if (req.user){
+    if (req.user && req.user.comprobado){
         const claves=(await pool.query('select clave from usuarios where lower(email)!=$1',[req.user.email.toLowerCase()])).rows
         if (claves.length>0){
             const comparaciones=claves.map((x)=>bcrypt.compare(req.body.clave,x.clave))
@@ -235,11 +251,22 @@ app.post(`${api}cambiarclave`,strictLimiter,authenticate_email,async(req,res)=>{
         }
         await pool.query('update usuarios set clave=$1 where lower(email)=$2',[await bcrypt.hash(req.body.clave,10),req.user.email.toLowerCase()])
         let result=await pool.query('select * from usuarios where lower(email)=$1;',[req.user.email.toLowerCase()])
-        res.json(jwtear(result.rows[0]))
+        const resultado=jwtear(result.rows[0])
+        const navegador=!!req.headers.origin
+        if (navegador){
+            res.cookie('token',resultado.token,{...cookieOptions,maxAge:1000*60*15})
+            res.cookie('refreshToken',resultado.refreshToken,{...cookieOptions,maxAge:1000*60*60*24*7})
+        }
+        res.json(navegador?resultado.usuario:resultado)
     }
     else{
         res.sendStatus(403)
     }
+})
+app.post(`${api}logout`,(req,res)=>{
+    res.clearCookie('token')
+    res.clearCookie('refreshToken')
+    res.sendStatus(204)
 })
 app.use(`${api}perfiles`,express.static('uploads/perfiles'))
 app.use(`${api}clientes`,authenticate,admin,clientes)
@@ -248,5 +275,5 @@ app.use(`${api}proyectos`,authenticate,admin,proyectos)
 app.use(`${api}registros`,authenticate,registros)
 app.use(`${api}usuarios`,authenticate,usuarios)
 server.listen(port,()=>{
-    console.log("Conectado")
+    console.log('Conectado')
 })

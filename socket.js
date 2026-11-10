@@ -2,6 +2,15 @@ import jwt from 'jsonwebtoken'
 import { pool } from './conexion.js'
 let io
 import {Server} from 'socket.io'
+import { parseCookie } from 'cookie'
+function getToken(socket){
+    const cookieHeader=socket.handshake.headers.cookie
+    if (cookieHeader){
+        const cookies=parseCookie(cookieHeader)
+        if (cookies.token) return cookies.token
+    }
+    return socket.handshake.auth?.token || null
+}
 export function initSocket(server){
     io=new Server(server,{
         path:"/webapi/socket.io",
@@ -9,11 +18,12 @@ export function initSocket(server){
         pingTimeout:5000,
         pingInterval: 5000,
         cors:{
-            origin:"*"
+            origin:['https://www.asinova.es', 'http://localhost:3000','http://localhost:4000'],
+            credentials:true
         }
     })
     io.use((socket,next)=>{
-        const token=socket.handshake.auth.token
+        const token=getToken(socket)
         if (!token){
             return next(new Error('NO_AUTORIZADO'))
         }

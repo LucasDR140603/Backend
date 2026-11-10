@@ -36,15 +36,15 @@ export function jwtear(x){
     delete x.clave
     delete x.pais
     const token=jwt.sign(payload,process.env.JWT_SECRET,{expiresIn:'15m'})
-    const refreshToken=jwt.sign(payload,process.env.JWT_SECRET_REFRESH)
+    const refreshToken=jwt.sign(payload,process.env.JWT_SECRET_REFRESH,{expiresIn:'7d'})
     return {usuario:x,token:token,refreshToken:refreshToken}
 }
 export function authenticate(req,res,next){
     const authHeader=req.headers['authorization']
-    const token=authHeader && authHeader.split(' ')[1]
+    const token=req.cookies?.token || (authHeader && authHeader.split(' ')[1])
     if (token==null){return res.sendStatus(401)}
     jwt.verify(token,process.env.JWT_SECRET,async(err,user)=>{
-        if (err) return res.status(401).json({error:'TOKEN_EXPIRED'})
+        if (err || !user.id) return res.status(401).json({error:'TOKEN_EXPIRED'})
         let result=await pool.query('select id,administrador from usuarios where id=$1 and operativo=true;',[user.id])
         if (result.rows.length==0) return res.status(403).json('Usuario no encontrado o no disponible')
         req.user=result.rows[0]
@@ -56,7 +56,7 @@ export function authenticate_email(req,res,next){
     const token=authHeader && authHeader.split(' ')[1]
     if (token==null){return res.sendStatus(403)}
     jwt.verify(token,process.env.JWT_SECRET,async(err,user)=>{
-        if (err) return res.status(401).json({error:'TOKEN_EXPIRED'})
+        if (err || !user.email) return res.status(401).json({error:'TOKEN_EXPIRED'})
         let result=await pool.query('select * from usuarios where lower(email)=$1 and operativo=true;',[user.email.toLowerCase()])
         if (result.rows.length==0) return res.status(403).json('Usuario no econtrado o no disponible')
         req.user={...user}

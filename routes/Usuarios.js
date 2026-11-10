@@ -4,18 +4,33 @@ import multer from 'multer'
 import fs from 'fs/promises'
 import bcrypt from 'bcrypt'
 import { comprobarClave,adaptar } from '../funciones.js'
+const EXT = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp' }
 const storage=multer.diskStorage({
     destination:"uploads/perfiles/",
     filename:(req,file,cb)=>{
-        const nombre=crypto.randomUUID()+"-"+file.originalname
+        const nombre=crypto.randomUUID()+"-"+EXT[file.mimetype]
         cb(null,nombre)
     }
 })
-const upload=multer({storage})
+const upload=multer({
+    storage,
+    fileFilter:(req,file,cb)=>{
+        if (EXT[file.mimetype]){
+            cb(null,true)
+        }else{
+            cb(new Error('Solo se permiten imágenes'))
+        }
+    },
+    limits: { fileSize: 5 * 1024 * 1024 } 
+})
 const router=express.Router()
 router.get('',async(req,res)=>{
     const query=await pool.query(`select * from usuarios where operativo=true ${req.user.administrador?'':`and id='${req.user.id}' `}order by nick`)
-    res.json(query.rows)
+    const filas=query.rows.map((x)=>{
+        delete x.clave
+        return x
+    })
+    res.json(filas)
 })
 router.get('/abierto-cerrado',async(req,res)=>{
     const query=await pool.query(`select * from usuarios ${req.user.administrador?'':`where id='${req.user.id}' `}order by nick`)
@@ -60,7 +75,8 @@ router.get('/:id/:id_proyecto/registros/ccpu',async(req,res)=>{
     if (!req.user.administrador && req.user.id!=req.params.id){
         return res.status(403).json('ERROR, acceso denegado')
     }
-    let result=await pool.query(`select clientes.nombre as cliente,centros.nombre as centro,proyectos.nombre as proyecto,usuarios.nick as usuario,centros.id_cliente,proyectos.id_centro,registros.id_proyecto,registros.id_usuario,registros.id,to_char(registros.inicio,'dd/MM/yyyy hh24:mi') as inicio,to_char(registros.fin,'dd/MM/yyyy hh24:mi') as fin,registros.descripcion,registros.observaciones,registros.km,registros.desplazamiento,registros.manutencion,registros.alojamiento,(extract(epoch from (registros.fin-registros.inicio))/3600)::numeric(10,1) as duracion from registros join proyectos on registros.id_proyecto=proyectos.id join usuarios on registros.id_usuario=usuarios.id join centros on proyectos.id_centro=centros.id join clientes on centros.id_cliente=clientes.id where registros.id_proyecto='${req.params.id_proyecto}' and registros.id_usuario='${req.params.id}' order by registros.inicio desc;`)
+    const {id,id_proyecto}=req.params
+    let result=await pool.query(`select clientes.nombre as cliente,centros.nombre as centro,proyectos.nombre as proyecto,usuarios.nick as usuario,centros.id_cliente,proyectos.id_centro,registros.id_proyecto,registros.id_usuario,registros.id,to_char(registros.inicio,'dd/MM/yyyy hh24:mi') as inicio,to_char(registros.fin,'dd/MM/yyyy hh24:mi') as fin,registros.descripcion,registros.observaciones,registros.km,registros.desplazamiento,registros.manutencion,registros.alojamiento,(extract(epoch from (registros.fin-registros.inicio))/3600)::numeric(10,1) as duracion from registros join proyectos on registros.id_proyecto=proyectos.id join usuarios on registros.id_usuario=usuarios.id join centros on proyectos.id_centro=centros.id join clientes on centros.id_cliente=clientes.id where registros.id_proyecto=$2 and registros.id_usuario=$1 order by registros.inicio desc;`,[id,id_proyecto])
     res.json(result.rows)
 })
 router.get('/proyectos',async(req,res)=>{
@@ -106,8 +122,9 @@ router.put('',async(req,res)=>{
     res.json('Usuario actualizado')
 })
 router.put('/:campo',async(req,res)=>{
+    const permitidos=['nombre','apellido1','apellido2','nick','clave','email','telefono']
     let campo=req.params.campo
-    if (['id','administrador','operativo','perfil'].includes(campo.toLowerCase())){
+    if (!permitidos.includes(campo.toLowerCase())){
         return res.status(403).json('Campo no actualizable desde este endpoint')
     }
     let valor=req.body.valor
