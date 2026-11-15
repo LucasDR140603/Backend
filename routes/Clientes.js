@@ -23,7 +23,7 @@ router.post('',async(req,res)=>{
 router.put('',async(req,res)=>{
     const x=req.body
     try{
-        await pool.query(`update clientes values set nombre=$2,abierto=$3 where id=$1`,[x.id,x.nombre,x.abierto])
+        await pool.query(`update clientes set nombre=$2,abierto=$3 where id=$1`,[x.id,x.nombre,x.abierto])
         res.json(x)
     }
     catch(err){
