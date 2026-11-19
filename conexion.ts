@@ -1,6 +1,5 @@
 import {Pool,Client,types} from 'pg'
 import { getIO } from './socket.js'
-import { adaptar } from './funciones.js'
 import 'dotenv/config'
 types.setTypeParser(1700, function(val) {
     return val === null ? null : parseFloat(val);
@@ -9,7 +8,7 @@ const datos_conexion={
     host:process.env.DB_HOST || 'localhost',
     user:'postgres',
     port:5432,
-    password:process.env.PASSWORD.replaceAll(`'`,''),
+    password:process.env.PASSWORD!.replaceAll(`'`,''),
     database:'grp'
 }
 export const pool=new Pool(datos_conexion)
@@ -18,12 +17,12 @@ export async function iniciar_listener(){
     await client.connect();
     await client.query('listen cambios')
     client.on('notification',async(msg)=>{
-        let {tabla,operacion,datos}=JSON.parse(msg.payload);
+        let {tabla,operacion,datos}=JSON.parse(msg.payload!);
         console.log('--- NUEVO CAMBIO DETECTADO ---');
         console.log(`Tabla: ${tabla}`);
         console.log(`Operación: ${operacion}`);
         const io=getIO()
-        let destino=io
+        let destino:typeof io | ReturnType<typeof io.to>=io
         if (['registros','usuarios'].includes(tabla)){
             destino=destino.to('administradores')
             if (tabla=='registros'){
@@ -42,12 +41,6 @@ export async function iniciar_listener(){
                 }
             }
         }
-        // else if (tabla=='proyectos'){
-        //     Array('inicio','fin').forEach((campo)=>{
-        //         let v=datos[campo]
-        //         datos[campo]=v==null?null:v.split(':').slice(0,-1).reduce((x,y)=>x+":"+y)
-        //     })
-        // }
         console.log('Datos:', datos);
         destino.emit(operacion.toLowerCase()+"-"+tabla,datos)
     })

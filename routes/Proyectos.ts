@@ -1,6 +1,6 @@
 import express from 'express'
-import {pool} from '../conexion.js'
-import { adaptar, formatFecha } from '../funciones.js'
+import {pool} from '../conexion.ts'
+import { adaptar, formatFecha } from '../funciones.ts'
 import crypto from 'crypto'
 const router=express.Router()
 router.get('',async(req,res)=>{
@@ -20,11 +20,11 @@ router.get('/orden-cc/abierto-cerrado',async(req,res)=>{
     res.json(query.rows)
 })
 router.get('/:id/registros',async(req,res)=>{
-    const query=adaptar(await pool.query(`select * from registros where id_proyecto=$1 and (id_usuario=$2 or $3) order by inicio desc`,[req.params.id,req.user.id,req.user.administrador]))
+    const query=adaptar(await pool.query(`select * from registros where id_proyecto=$1 and (id_usuario=$2 or $3) order by inicio desc`,[req.params.id,req.user!.id,req.user!.administrador]))
     res.json(query.rows)
 })
 router.get('/:id/registros/ccpu',async(req,res)=>{
-    const query=await pool.query(`select clientes.nombre as cliente,centros.nombre as centro,proyectos.nombre as proyecto,usuarios.nick as usuario,centros.id_cliente,proyectos.id_centro,registros.id_proyecto,registros.id_usuario,registros.id,to_char(registros.inicio,'dd/MM/yyyy hh24:mi') as inicio,to_char(registros.fin,'dd/MM/yyyy hh24:mi') as fin,registros.descripcion,registros.observaciones,registros.km,registros.desplazamiento,registros.manutencion,registros.alojamiento,(extract(epoch from (registros.fin-registros.inicio))/3600)::numeric(10,1) as duracion from registros join proyectos on registros.id_proyecto=proyectos.id join usuarios on registros.id_usuario=usuarios.id join centros on proyectos.id_centro=centros.id join clientes on centros.id_cliente=clientes.id where registros.id_proyecto=$1 and (registros.id_usuario=$2 or $3) order by inicio desc`,[req.params.id,req.user.id,req.user.administrador])
+    const query=await pool.query(`select clientes.nombre as cliente,centros.nombre as centro,proyectos.nombre as proyecto,usuarios.nick as usuario,centros.id_cliente,proyectos.id_centro,registros.id_proyecto,registros.id_usuario,registros.id,to_char(registros.inicio,'dd/MM/yyyy hh24:mi') as inicio,to_char(registros.fin,'dd/MM/yyyy hh24:mi') as fin,registros.descripcion,registros.observaciones,registros.km,registros.desplazamiento,registros.manutencion,registros.alojamiento,(extract(epoch from (registros.fin-registros.inicio))/3600)::numeric(10,1) as duracion from registros join proyectos on registros.id_proyecto=proyectos.id join usuarios on registros.id_usuario=usuarios.id join centros on proyectos.id_centro=centros.id join clientes on centros.id_cliente=clientes.id where registros.id_proyecto=$1 and (registros.id_usuario=$2 or $3) order by inicio desc`,[req.params.id,req.user!.id,req.user!.administrador])
     res.json(query.rows)
 })
 router.post('',async(req,res)=>{

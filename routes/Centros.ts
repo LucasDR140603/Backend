@@ -1,5 +1,5 @@
 import express from 'express'
-import {pool} from '../conexion.js'
+import {pool} from '../conexion.ts'
 import crypto from 'crypto'
 const router=express.Router()
 router.get('',async(req,res)=>{

@@ -1,9 +1,10 @@
 import jwt from 'jsonwebtoken'
-import { pool } from './conexion.js'
-let io
-import {Server} from 'socket.io'
+import { pool } from './conexion.ts'
+let io:Server | null
+import {Server,type Socket} from 'socket.io'
 import { parseCookie } from 'cookie'
-function getToken(socket){
+import http from 'http'
+function getToken(socket:Socket){
     const cookieHeader=socket.handshake.headers.cookie
     if (cookieHeader){
         const cookies=parseCookie(cookieHeader)
@@ -11,7 +12,7 @@ function getToken(socket){
     }
     return socket.handshake.auth?.token || null
 }
-export function initSocket(server){
+export function initSocket(server:http.Server){
     io=new Server(server,{
         path:"/webapi/socket.io",
         transports: ['websocket'],
@@ -28,7 +29,7 @@ export function initSocket(server){
             return next(new Error('NO_AUTORIZADO'))
         }
         try{
-            jwt.verify(token,process.env.JWT_SECRET,async(err,user)=>{
+            jwt.verify(token,process.env.JWT_SECRET!,async(err:jwt.VerifyErrors | null,user:any)=>{
                 if (err) return next(new Error("TOKEN_INVÁLIDO"))
                 let result=await pool.query('select id,administrador from usuarios where id=$1 and operativo=true;',[user.id])
                 if (result.rows.length==0) return next(new Error("Usuario no encontrado o no disponible"))
@@ -51,7 +52,7 @@ export function initSocket(server){
     })
     return io
 }
-export function getIO(){
+export function getIO():Server{
     if (!io){
         throw new Error("Socket.IO no se inicializó aún")
     }
