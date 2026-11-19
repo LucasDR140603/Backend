@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken'
-import {pool} from './conexion.js'
+import {pool} from './conexion.ts'
 import { type Request,type Response,type NextFunction } from 'express'
 import {type QueryResult,type QueryResultRow} from 'pg'
 export function comprobarClave(str:string){
