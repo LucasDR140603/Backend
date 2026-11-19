@@ -1,5 +1,5 @@
 import {Pool,Client,types} from 'pg'
-import { getIO } from './socket.js'
+import { getIO } from './socket.ts'
 import 'dotenv/config'
 types.setTypeParser(1700, function(val) {
     return val === null ? null : parseFloat(val);
