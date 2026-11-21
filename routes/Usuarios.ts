@@ -34,7 +34,10 @@ router.get('',async(req,res)=>{
 })
 router.get('/abierto-cerrado',async(req,res)=>{
     const query=await pool.query(`select * from usuarios where id=$1 or $2 order by nick`,[req.user!.id,req.user!.administrador])
-    res.json(query.rows)
+    res.json(query.rows.map((x)=>{
+        delete x.clave
+        return x
+    }))
 })
 router.get('/:id/registros',async(req,res)=>{
     if (!req.user!.administrador && req.user!.id!=req.params.id){
